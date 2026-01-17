@@ -10,7 +10,7 @@ import datetime
 import pytz
 
 # --- 1. CONFIGURAÇÃO (TOKEN INSERIDO) ---
-TOKEN = "MTQ2MjE5Mjk1NDk2ODg5OTg1Mw.GmceMU.BUT4sqRPAMC0b7HnJu-r-gMwUFqJuBoT7xVdoA" 
+TOKEN = "MTQ2MjE5Mjk1NDk2ODg5OTg1Mw.GzvBqk.JFB-LcUT04qajXqF7VZVtTy1koGFqz7RS_fPj4"
 DB_FILE = 'database.json'
 
 def get_sp_time():
