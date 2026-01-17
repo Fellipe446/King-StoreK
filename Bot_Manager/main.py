@@ -9,8 +9,9 @@ import string
 import datetime
 import pytz
 
-# --- 1. CONFIGURAÇÃO (TOKEN INSERIDO) ---
-TOKEN = "MTQ2MjE5Mjk1NDk2ODg5OTg1Mw.GzvBqk.JFB-LcUT04qajXqF7VZVtTy1koGFqz7RS_fPj4"
+# --- 1. CONFIGURAÇÃO SEGURA ---
+# O Token não fica mais aqui. Ele deve ser colocado no Render em 'Environment Variables' com o nome DISCORD_TOKEN
+TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
 
 def get_sp_time():
@@ -56,11 +57,17 @@ class KingBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.all())
         self.tree = app_commands.CommandTree(self)
+    
     async def setup_hook(self):
         self.add_view(ResetView())
         await self.tree.sync()
+        print(f"✅ Comandos sincronizados para {self.user}")
 
 bot = KingBot()
+
+@bot.event
+async def on_ready():
+    print(f"🚀 Bot Online como {bot.user}")
 
 @bot.tree.command(name="gerarkey", description="Gera chaves para o script")
 @app_commands.choices(duracao=[
@@ -99,7 +106,11 @@ def auth():
         return "Vinculado", 200
     return "Sucesso" if info["hwid"] == hwid else ("HWID_Incorreto", 403)
 
-def run(): app.run(host='0.0.0.0', port=10000)
+def run():
+    # Render usa a porta 10000 por padrão
+    app.run(host='0.0.0.0', port=10000)
+
 if __name__ == '__main__':
-    threading.Thread(target=run).start()
+    t = threading.Thread(target=run)
+    t.start()
     bot.run(TOKEN)
