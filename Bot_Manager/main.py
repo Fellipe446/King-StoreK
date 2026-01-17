@@ -8,11 +8,13 @@ import random
 import string
 import datetime
 import pytz
+import re
 
-# --- 1. CONFIGURAÇÃO SEGURA ---
-# O Token não fica mais aqui. Ele deve ser colocado no Render em 'Environment Variables' com o nome DISCORD_TOKEN
+# --- 1. CONFIGURAÇÃO ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
+# Coloque o ID do canal onde você quer receber os LOGS de vendas e segurança
+LOG_CHANNEL_ID = 123456789012345678  # <--- TROQUE PELO ID DO SEU CANAL DE LOGS
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -21,7 +23,7 @@ def get_sp_time():
 def load_db():
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, 'w') as f: 
-            json.dump({"keys": {}, "script_status": 1}, f)
+            json.dump({"keys": {}, "script_status": 1, "config": {"anti_invite": True}}, f)
     with open(DB_FILE, 'r') as f: return json.load(f)
 
 def save_db(data):
@@ -43,7 +45,7 @@ class ResetModal(ui.Modal, title="♻️ Resetar HWID - King Store"):
         del db["keys"][k_antiga]
         save_db(db)
 
-        await interaction.response.send_message(f"✅ HWID Resetado! Sua nova key é: `{nova_k}` (Enviada no seu privado)", ephemeral=True)
+        await interaction.response.send_message(f"✅ HWID Resetado! Sua nova key é: `{nova_k}`", ephemeral=True)
         try: await interaction.user.send(f"💎 **King Store**\nSua nova key: `{nova_k}`")
         except: pass
 
@@ -61,14 +63,34 @@ class KingBot(discord.Client):
     async def setup_hook(self):
         self.add_view(ResetView())
         await self.tree.sync()
-        print(f"✅ Comandos sincronizados para {self.user}")
 
 bot = KingBot()
 
 @bot.event
 async def on_ready():
-    print(f"🚀 Bot Online como {bot.user}")
+    print(f"🚀 King Store Online: {bot.user}")
+    await bot.change_presence(activity=discord.Game(name="Protegendo a King Store 💎"))
 
+# --- 🛡️ SISTEMA DE PROTEÇÃO (ANTI-INVITE) ---
+@bot.event
+async def on_message(message):
+    if message.author.bot: return
+    
+    # Detecta links de convite do Discord
+    if "discord.gg/" in message.content.lower() or "discord.com/invite/" in message.content.lower():
+        if not message.author.guild_permissions.administrator:
+            await message.delete()
+            await message.channel.send(f"⚠️ {message.author.mention}, não é permitido enviar convites aqui!", delete_after=5)
+            
+            # Log de Segurança
+            log_ch = bot.get_channel(LOG_CHANNEL_ID)
+            if log_ch:
+                embed = discord.Embed(title="🛡️ Tentativa de Anti-Invite", color=discord.Color.red())
+                embed.add_field(name="Usuário", value=message.author.name)
+                embed.add_field(name="Conteúdo", value=f"||{message.content}||")
+                await log_ch.send(embed=embed)
+
+# --- 🔑 COMANDOS DE KEYS ---
 @bot.tree.command(name="gerarkey", description="Gera chaves para o script")
 @app_commands.choices(duracao=[
     app_commands.Choice(name="1 Dia", value=1),
@@ -76,6 +98,9 @@ async def on_ready():
     app_commands.Choice(name="Permanente", value=0)
 ])
 async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choice[int], quantidade: int = 1):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
+        
     db = load_db()
     novas = []
     for _ in range(quantidade):
@@ -84,33 +109,54 @@ async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choic
         db["keys"][nk] = {"hwid": None, "expira": venc}
         novas.append(nk)
     save_db(db)
-    await interaction.response.send_message(f"💎 **Keys Geradas:**\n`" + "\n".join(novas) + "`")
+    
+    await interaction.response.send_message(f"💎 **Keys Geradas com Sucesso!**")
+    await interaction.channel.send(f"```\n" + "\n".join(novas) + "\n```")
 
 @bot.tree.command(name="painel_hwid", description="Envia o botão de reset")
 async def painel(interaction: discord.Interaction):
-    await interaction.channel.send("♻️ Precisa resetar seu HWID? Use o botão abaixo:", view=ResetView())
+    await interaction.channel.send("♻️ **Central de HWID**\nClique no botão abaixo para resetar seu vínculo.", view=ResetView())
     await interaction.response.send_message("Painel enviado!", ephemeral=True)
 
-# --- 5. API FLASK (PARA O ROBLOX) ---
+# --- 🌐 API FLASK (Logs de Autenticação) ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
     key = request.args.get('key')
     hwid = request.args.get('hwid')
     db = load_db()
+    
     if key not in db["keys"]: return "Invalida", 404
+    
+    # Lógica de Logs no Discord via Thread para não travar a API
+    def send_api_log(status):
+        log_ch = bot.get_channel(LOG_CHANNEL_ID)
+        if log_ch:
+            cor = discord.Color.green() if "Sucesso" in status else discord.Color.orange()
+            embed = discord.Embed(title="🔑 Log de Autenticação", color=cor)
+            embed.add_field(name="Key", value=f"`{key}`")
+            embed.add_field(name="Status", value=status)
+            embed.add_field(name="HWID", value=f"`{hwid}`")
+            # Usando bot.loop para enviar de dentro de uma thread
+            bot.loop.create_task(log_ch.send(embed=embed))
+
     info = db["keys"][key]
     if info["hwid"] is None:
         db["keys"][key]["hwid"] = hwid
         save_db(db)
+        send_api_log("✅ Primeiro Vínculo (Sucesso)")
         return "Vinculado", 200
-    return "Sucesso" if info["hwid"] == hwid else ("HWID_Incorreto", 403)
+    
+    if info["hwid"] == hwid:
+        send_api_log("✅ Login Realizado")
+        return "Sucesso"
+    else:
+        send_api_log("❌ Tentativa de Login (HWID Incorreto)")
+        return "HWID_Incorreto", 403
 
 def run():
-    # Render usa a porta 10000 por padrão
     app.run(host='0.0.0.0', port=10000)
 
 if __name__ == '__main__':
-    t = threading.Thread(target=run)
-    t.start()
+    threading.Thread(target=run).start()
     bot.run(TOKEN)
