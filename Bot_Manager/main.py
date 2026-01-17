@@ -9,8 +9,8 @@ import string
 import datetime
 import pytz
 
-# --- 1. CONFIGURAÇÃO (COLOQUE SEU TOKEN AQUI) ---
-TOKEN = "SEU_TOKEN_AQUI" # <--- Cole o Token do King Store💎 aqui
+# --- 1. CONFIGURAÇÃO (TOKEN INSERIDO) ---
+TOKEN = "MTQ2MjE5Mjk1NDk2ODg5OTg1Mw.GmceMU.BUT4sqRPAMC0b7HnJu-r-gMwUFqJuBoT7xVdoA" 
 DB_FILE = 'database.json'
 
 def get_sp_time():
