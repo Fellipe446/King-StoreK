@@ -1,54 +1,50 @@
-import discord
-from discord.ext import commands
-import random
 import string
-from github import Github  # Certifique-se de ter instalado: pip install PyGithub
+import random
+from github import Github # pip install PyGithub
 
 # --- CONFIGURAÇÃO ---
-TOKEN_DISCORD = "MTQ2MjE5Mjk1NDk2ODg5OTg1Mw.GtQxls.cHePCOzIP4ykJPWZOPxLK9lzJ7WIpMQ6Hu3BI4"
-TOKEN_GITHUB = "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"
+TOKEN_GITHUB = "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" # Seu token
 REPO_NOME = "Fellipe446/King-StoreK"
 CAMINHO_ARQUIVO = "Bot_Manager/keys.txt"
 
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+def gerador_de_keys(quantidade=1):
+    keys = []
+    for _ in range(quantidade):
+        codigo = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        keys.append(f"KING-{codigo}")
+    return keys
 
-# FUNÇÃO QUE ENVIA PARA O GITHUB
-def salvar_key_no_github(nova_key):
+def atualizar_github():
     try:
         g = Github(TOKEN_GITHUB)
         repo = g.get_repo(REPO_NOME)
         contents = repo.get_contents(CAMINHO_ARQUIVO)
         
-        # Pega o conteúdo atual e adiciona a nova key
-        antigo_conteudo = contents.decoded_content.decode('utf-8')
-        # Garante que comece em uma nova linha
-        novo_conteudo = antigo_conteudo.strip() + f"\n{nova_key}"
+        print("--- Gerador King Hub ---")
+        qtd = int(input("Quantas chaves deseja gerar e enviar? "))
+        novas_keys = gerador_de_keys(qtd)
         
-        # Faz o update no arquivo
+        # Pega o que já existe no GitHub
+        conteudo_atual = contents.decoded_content.decode('utf-8').strip()
+        
+        # Une com as novas chaves
+        lista_final = conteudo_atual + "\n" + "\n".join(novas_keys)
+        
+        # Faz o upload
         repo.update_file(
             contents.path, 
-            f"Bot: Nova key gerada {nova_key}", 
-            novo_conteudo, 
+            f"Update: +{qtd} keys geradas", 
+            lista_final, 
             contents.sha
         )
-        return True
+        
+        print("\n✅ SUCESSO!")
+        print("As seguintes chaves foram adicionadas ao GitHub:")
+        for k in novas_keys:
+            print(f" -> {k}")
+            
     except Exception as e:
-        print(f"Erro ao salvar no GitHub: {e}")
-        return False
+        print(f"\n❌ ERRO: {e}")
 
-# COMANDO PARA GERAR KEY
-@bot.command()
-async def gerarkey(ctx):
-    # Gera uma key aleatória: KING-XXXX
-    letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    nova_key = f"KING-{letras}"
-    
-    await ctx.send(f"⏳ Gerando chave **{nova_key}** e salvando no banco de dados...")
-    
-    # Chama a função do GitHub
-    if salvar_key_no_github(nova_key):
-        await ctx.send(f"✅ **Sucesso!** Sua key é: `{nova_key}`\nEla já pode ser usada no Roblox.")
-    else:
-        await ctx.send("❌ **Erro:** Não foi possível salvar a key no GitHub. Verifique o console.")
-
-bot.run(TOKEN_DISCORD)
+if __name__ == "__main__":
+    atualizar_github()
