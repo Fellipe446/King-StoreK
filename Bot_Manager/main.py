@@ -44,7 +44,6 @@ class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
         save_db(db)
 
         embed = discord.Embed(title="♻️ RESET CONCLUÍDO", color=COR_SUCESSO, description="Sua nova chave foi enviada no seu **Privado (DM)**.")
-        embed.set_footer(text="King Store © 2026")
         await interaction.response.send_message(embed=embed, ephemeral=True)
         try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`")
         except: pass
@@ -67,29 +66,49 @@ bot = KingBot()
 
 # --- 👑 COMANDOS PADRONIZADOS ---
 
-@bot.tree.command(name="gerar", description="⚙️ Gera novas licenças")
-async def gerar(interaction: discord.Interaction, dias: int, quantidade: int = 1):
+@bot.tree.command(name="gerarkey", description="⚙️ Gera novas licenças personalizadas")
+@app_commands.choices(unidade=[
+    app_commands.Choice(name="Minutos", value="minutos"),
+    app_commands.Choice(name="Horas", value="horas"),
+    app_commands.Choice(name="Dias", value="dias"),
+    app_commands.Choice(name="Semanas", value="semanas"),
+    app_commands.Choice(name="Meses", value="meses"),
+    app_commands.Choice(name="Vitalício", value="vitalicio")
+])
+async def gerarkey(interaction: discord.Interaction, quantidade: int, tempo: int, unidade: app_commands.Choice[str]):
     if not interaction.user.guild_permissions.administrator: return
     db = load_db()
     novas = []
-    venc = (get_sp_time() + datetime.timedelta(days=dias)).strftime("%d/%m/%Y")
+    agora = get_sp_time()
+
+    # Cálculo do Tempo
+    if unidade.value == "minutos": exp = agora + datetime.timedelta(minutes=tempo)
+    elif unidade.value == "horas": exp = agora + datetime.timedelta(hours=tempo)
+    elif unidade.value == "dias": exp = agora + datetime.timedelta(days=tempo)
+    elif unidade.value == "semanas": exp = agora + datetime.timedelta(weeks=tempo)
+    elif unidade.value == "meses": exp = agora + datetime.timedelta(days=tempo*30)
+    else: exp = None # Vitalício
+
+    data_formatada = exp.strftime("%d/%m/%Y %H:%M") if exp else "VITALÍCIO"
     
     for _ in range(quantidade):
         nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": venc, "ativa": True}
+        db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": data_formatada, "ativa": True}
         novas.append(nk)
+    
     save_db(db)
     
-    # Visual exatamente como você pediu:
     lista_keys = "\n".join([f"• Código: **{k}**" for k in novas])
     
     embed = discord.Embed(title="🔑 LICENÇA GERADA COM SUCESSO", color=COR_SUCESSO)
     embed.description = (
-        f"• Quantidade: **{quantidade} Key**\n"
+        f"• Quantidade: **{quantidade} Key{'s' if quantidade > 1 else ''}**\n"
         f"{lista_keys}\n"
-        f"• Status: 🟢 Ativa"
+        f"• Status: 🟢 Ativa\n"
+        f"• Duração: **{tempo} {unidade.name}**\n"
+        f"• Expiração: `{data_formatada}`"
     )
-    embed.set_footer(text=f"Validade: {venc} - King Store © 2026")
+    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="cadastro", description="👤 Vincula Nick à Key")
@@ -98,16 +117,10 @@ async def cadastro(interaction: discord.Interaction, key: str, nick: str):
     key = key.upper().strip()
     if key not in db["keys"]:
         return await interaction.response.send_message("❌ **ERRO:** Key inexistente.", ephemeral=True)
-    
     db["keys"][key]["roblox_nick"] = nick
     save_db(db)
-    
     embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
-    embed.description = (
-        f"• Nick: **{nick}**\n"
-        f"• Status: 🟢 Cadastrado com Sucesso"
-    )
-    embed.set_footer(text="King Store © 2026")
+    embed.description = f"• Nick: **{nick}**\n• Status: 🟢 Cadastrado com Sucesso"
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de HWID")
@@ -118,12 +131,10 @@ async def painelhwid(interaction: discord.Interaction):
             "**Protocolo de Gerenciamento**\n\n"
             "Se você trocou de hardware ou formatou seu PC, utilize o terminal abaixo para resetar seu vínculo.\n\n"
             "**ATENÇÃO:**\n"
-            "Ao clicar no botão, sua chave antiga será deletada e uma nova será enviada no seu **Privado (DM)**.\n\n"
-            "🛡️ *Proteção de dados ativada via King Security.*"
+            "Ao clicar no botão, sua chave antiga será deletada e uma nova será enviada no seu **Privado (DM)**."
         ), 
         color=COR_TECH
     )
-    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     await interaction.channel.send(embed=embed, view=ResetView())
     await interaction.response.send_message("✅ Painel enviado.", ephemeral=True)
 
