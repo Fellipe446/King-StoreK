@@ -91,7 +91,7 @@ async def on_ready():
     print(f"✅ SISTEMA OPERACIONAL ATIVO: {bot.user}")
     await bot.change_presence(activity=discord.Game(name="🛡️ King Store Security 2026"))
 
-# --- 👑 COMANDOS DE ADMINISTRAÇÃO ---
+# --- 👑 COMANDOS ADMINISTRATIVOS ---
 
 @bot.tree.command(name="gerar", description="⚙️ Gera novas licenças de acesso")
 @app_commands.choices(duracao=[
@@ -122,21 +122,8 @@ async def deletar(interaction: discord.Interaction, key: str):
     if key in db["keys"]:
         del db["keys"][key]
         save_db(db)
-        await interaction.response.send_message(f"✅ Licença `{key}` incinerada.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Licença `{key}` deletada.", ephemeral=True)
     else: await interaction.response.send_message("❌ Chave inexistente.", ephemeral=True)
-
-@bot.tree.command(name="estender", description="⏳ Soma dias extras a uma licença")
-async def estender(interaction: discord.Interaction, key: str, dias: int):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db()
-    key = key.upper().strip()
-    if key in db["keys"] and db["keys"][key]["expira"] != "LIFETIME":
-        atual = datetime.datetime.strptime(db["keys"][key]["expira"], "%d/%m/%Y")
-        nova = (atual + datetime.timedelta(days=dias)).strftime("%d/%m/%Y")
-        db["keys"][key]["expira"] = nova
-        save_db(db)
-        await interaction.response.send_message(f"✅ `{key}` estendida para `{nova}`.", ephemeral=True)
-    else: await interaction.response.send_message("❌ Erro ao estender.", ephemeral=True)
 
 @bot.tree.command(name="pausar", description="🔒 Bloqueia ou desbloqueia uma licença")
 async def pausar(interaction: discord.Interaction, key: str):
@@ -175,8 +162,10 @@ async def painelhwid(interaction: discord.Interaction):
         ), 
         color=COR_TECH
     )
-    # Link direto para uma imagem profissional de tecnologia
-    embed.set_image(url="https://i.imgur.com/wVdYq8p.png")
+    
+    # IMPORTANTE: Mande sua foto no Discord e cole o link dela abaixo:
+    embed.set_image(url="https://i.imgur.com/uW6P8Wb.png") 
+    
     embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     
     await interaction.channel.send(embed=embed, view=ResetView())
