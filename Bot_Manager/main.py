@@ -175,7 +175,8 @@ async def painelhwid(interaction: discord.Interaction):
         ), 
         color=COR_TECH
     )
-    embed.set_image(url="https://chatgpt.com/s/m_696c3636190881919e0ba993fc749a27")
+    # Link direto para uma imagem profissional de tecnologia
+    embed.set_image(url="https://i.imgur.com/wVdYq8p.png")
     embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     
     await interaction.channel.send(embed=embed, view=ResetView())
