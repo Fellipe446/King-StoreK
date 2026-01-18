@@ -15,6 +15,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
 COR_SUCESSO = 0x00FF7F       
 COR_TECH = 0x00FFFF          
+COR_ERRO = 0xFF2D2D
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -54,11 +55,21 @@ class ConfirmarCadastro(ui.View):
         db = load_db()
         if self.key not in db["keys"]:
             return await interaction.response.edit_message(content="❌ Erro: Key não encontrada.", view=None)
+        
         db["keys"][self.key]["roblox_nick"] = self.username
         save_db(db)
+
         embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
-        embed.description = f"• Nome de Criação: **@{self.username}**\n• Nome de Exibição: **{self.display_name}**\n• Status: 🟢 Vinculado com Sucesso"
+        embed.description = (
+            f"• Nome de Criação: **@{self.username}**\n"
+            f"• Nome de Exibição: **{self.display_name}**\n"
+            f"• Status: 🟢 Vinculado com Sucesso"
+        )
         await interaction.response.edit_message(embed=embed, view=None)
+
+    @ui.button(label="CANCELAR", style=discord.ButtonStyle.danger, emoji="✖️")
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.edit_message(content="❌ Operação cancelada.", embed=None, view=None)
 
 # --- 🔐 SISTEMA DE RESET (MODAL) ---
 class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
@@ -78,7 +89,7 @@ class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
 
         embed = discord.Embed(title="♻️ RESET CONCLUÍDO", color=COR_SUCESSO, description="Sua nova chave foi enviada na sua **Privado (DM)**.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`\n*O nick vinculado permanece o mesmo.*")
+        try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`")
         except: pass
 
 class ResetView(ui.View):
@@ -97,7 +108,7 @@ class KingBot(discord.Client):
 
 bot = KingBot()
 
-# --- 👑 COMANDOS ---
+# --- 👑 COMANDOS GESTÃO (ADMIN) ---
 
 @bot.tree.command(name="gerarkey", description="⚙️ Gera novas licenças")
 @app_commands.choices(duracao=[
@@ -111,34 +122,85 @@ bot = KingBot()
 async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choice[str], tempo: int, quantidade: int):
     if not interaction.user.guild_permissions.administrator: return
     db = load_db(); novas = []; agora = get_sp_time()
+
     if duracao.value == "minutos": exp = agora + datetime.timedelta(minutes=tempo)
     elif duracao.value == "horas": exp = agora + datetime.timedelta(hours=tempo)
     elif duracao.value == "dias": exp = agora + datetime.timedelta(days=tempo)
     elif duracao.value == "semanas": exp = agora + datetime.timedelta(weeks=tempo)
     elif duracao.value == "meses": exp = agora + datetime.timedelta(days=tempo*30)
     else: exp = None 
+
     data_f = exp.strftime("%d/%m/%Y %H:%M") if exp else "VITALÍCIO"
     for _ in range(quantidade):
         nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
         db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": data_f, "ativa": True}
         novas.append(nk)
     save_db(db)
+    
     lista = "\n".join([f"• Código: **{k}**" for k in novas])
     embed = discord.Embed(title="🔑 LICENÇA GERADA COM SUCESSO", color=COR_SUCESSO)
     embed.description = f"• Quantidade: **{quantidade} Key**\n{lista}\n• Status: 🟢 Ativa"
     embed.set_footer(text=f"Duração: {tempo} {duracao.name} | Expira: {data_f}")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="cadastro", description="👤 Vincula sua conta Roblox")
+@bot.tree.command(name="infokey", description="🔍 Consulta detalhes de uma licença")
+async def infokey(interaction: discord.Interaction, key: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); key = key.upper().strip()
+    if key not in db["keys"]: return await interaction.response.send_message("❌ Inexistente.", ephemeral=True)
+    d = db["keys"][key]
+    embed = discord.Embed(title="🔍 DETALHES", color=COR_TECH)
+    embed.description = f"• Key: `{key}`\n• Nick: `{d['roblox_nick'] or 'Livre'}`\n• HWID: `{d['hwid'] or 'Vazio'}`\n• Expira: `{d['expira']}`"
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="listarkeys", description="📋 Lista todas as chaves ativas")
+async def listarkeys(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db()
+    txt = "\n".join([f"• `{k}` | `{v['roblox_nick'] or 'Livre'}`" for k, v in db["keys"].items()])
+    if len(txt) > 2000: txt = txt[:1990] + "..."
+    await interaction.response.send_message(embed=discord.Embed(title="📋 RELATÓRIO", description=txt or "Vazio", color=COR_TECH), ephemeral=True)
+
+@bot.tree.command(name="deletarkey", description="🗑️ Remove uma licença")
+async def deletarkey(interaction: discord.Interaction, key: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); key = key.upper().strip()
+    if key in db["keys"]:
+        del db["keys"][key]; save_db(db)
+        await interaction.response.send_message(f"✅ Removida: `{key}`", ephemeral=True)
+    else: await interaction.response.send_message("❌ Não encontrada.", ephemeral=True)
+
+@bot.tree.command(name="limparbanco", description="⚠️ DELETA TODAS AS KEYS")
+async def limparbanco(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); db["keys"] = {}; save_db(db)
+    await interaction.response.send_message("💣 Database limpa com sucesso.", ephemeral=True)
+
+@bot.tree.command(name="setstatus", description="🔧 Altera o status do Script")
+async def setstatus(interaction: discord.Interaction, status: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); db["script_status"] = status; save_db(db)
+    await interaction.response.send_message(f"✅ Status: `{status}`", ephemeral=True)
+
+# --- 👤 COMANDOS PÚBLICOS ---
+
+@bot.tree.command(name="cadastro", description="👤 Vincula sua conta Roblox à Key")
 async def cadastro(interaction: discord.Interaction, key: str, nome_criacao: str):
     db = load_db(); key = key.upper().strip()
     if key not in db["keys"]: return await interaction.response.send_message("❌ Key inexistente.", ephemeral=True)
     if db["keys"][key].get("roblox_nick"): return await interaction.response.send_message("⚠️ Já vinculada.", ephemeral=True)
+
     disp, real = get_roblox_info(nome_criacao)
-    if not disp: return await interaction.response.send_message("❌ Usuário não encontrado.", ephemeral=True)
+    if not disp: return await interaction.response.send_message("❌ Usuário Roblox não encontrado.", ephemeral=True)
+
     embed = discord.Embed(title="🛡️ VERIFICAÇÃO", color=COR_TECH)
-    embed.description = f"Localizamos sua conta:\n• Username: **@{real}**\n• Display: **{disp}**\n\nConfirma o vínculo?"
+    embed.description = f"Localizamos sua conta:\n• Username: **@{real}**\n• Display: **{disp}**\n\nConfirma o vínculo desta Key?"
     await interaction.response.send_message(embed=embed, view=ConfirmarCadastro(key, real, disp), ephemeral=True)
+
+@bot.tree.command(name="status", description="📡 Verifica o sistema")
+async def status(interaction: discord.Interaction):
+    db = load_db(); st = db.get("script_status", "🟢 ONLINE")
+    await interaction.response.send_message(embed=discord.Embed(title="📡 DIAGNÓSTICO", description=f"• Script: `{st}`\n• API: `🟢 OPERACIONAL`", color=COR_TECH))
 
 @bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de Reset")
 async def painelhwid(interaction: discord.Interaction):
@@ -153,22 +215,7 @@ async def painelhwid(interaction: discord.Interaction):
     await interaction.channel.send(embed=embed, view=ResetView())
     await interaction.response.send_message("✅ Painel enviado.", ephemeral=True)
 
-@bot.tree.command(name="infokey", description="🔍 Consulta licença")
-async def infokey(interaction: discord.Interaction, key: str):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db(); key = key.upper().strip()
-    if key not in db["keys"]: return await interaction.response.send_message("❌ Inexistente.", ephemeral=True)
-    d = db["keys"][key]
-    embed = discord.Embed(title="🔍 DETALHES", color=COR_TECH)
-    embed.description = f"• Key: `{key}`\n• Nick: `{d['roblox_nick'] or 'Livre'}`\n• HWID: `{d['hwid'] or 'Vazio'}`\n• Expira: `{d['expira']}`"
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="status", description="📡 Status")
-async def status(interaction: discord.Interaction):
-    db = load_db(); st = db.get("script_status", "🟢 ONLINE")
-    await interaction.response.send_message(embed=discord.Embed(title="📡 DIAGNÓSTICO", description=f"• Script: `{st}`\n• API: `🟢 OPERACIONAL`", color=COR_TECH))
-
-# --- API ---
+# --- 🕸️ API ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
