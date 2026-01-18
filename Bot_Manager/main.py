@@ -9,13 +9,12 @@ import string
 import datetime
 import pytz
 
-# --- 🛰️ CONFIGURAÇÕES DE NÚCLEO (2026) ---
+# --- 🛰️ CONFIGURAÇÕES DE NÚCLEO ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
-LOG_CHANNEL_ID = 1234567890  # <--- COLOQUE O ID DO SEU CANAL DE LOGS AQUI
-COR_TECH = 0x00FFFF          # Ciano Cyber
-COR_ERRO = 0xFF2D2D          # Vermelho Neon
-COR_SUCESSO = 0x00FF7F       # Verde Esmeralda
+COR_TECH = 0x00FFFF          
+COR_ERRO = 0xFF2D2D          
+COR_SUCESSO = 0x00FF7F       
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -24,7 +23,7 @@ def get_sp_time():
 def load_db():
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, 'w') as f: 
-            json.dump({"keys": {}, "script_status": "ONLINE"}, f)
+            json.dump({"keys": {}, "script_status": "🟢 ONLINE", "blacklist": []}, f)
     with open(DB_FILE, 'r') as f: return json.load(f)
 
 def save_db(data):
@@ -42,7 +41,8 @@ class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE PURIFICAÇÃO"):
         
         info = db["keys"][key]
         nova_k = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-        db["keys"][nova_k] = {"hwid": None, "expira": info["expira"], "ativa": True}
+        # Mantém o nick do roblox no reset, mas limpa o HWID
+        db["keys"][nova_k] = {"hwid": None, "roblox_nick": info.get("roblox_nick"), "expira": info["expira"], "ativa": True}
         del db["keys"][key]
         save_db(db)
         await interaction.response.send_message(f"♻️ HWID Resetado! Nova Key enviada na DM.", ephemeral=True)
@@ -65,92 +65,90 @@ class KingBot(discord.Client):
 
 bot = KingBot()
 
-# --- 👑 COMANDOS ADMINISTRATIVOS ---
+# --- 👑 COMANDOS DE GESTÃO ---
 
-@bot.tree.command(name="status", description="📡 Verifica a integridade do sistema e API")
-async def status(interaction: discord.Interaction):
+@bot.tree.command(name="cadastro", description="👤 Vincula seu Nick do Roblox à sua Key")
+async def cadastro(interaction: discord.Interaction, key: str, nick: str):
     db = load_db()
-    uptime = "ESTÁVEL"
-    script_st = db.get("script_status", "ONLINE")
+    key = key.upper().strip()
     
-    embed = discord.Embed(title="🛰️ DIAGNÓSTICO DE SISTEMA", color=COR_TECH)
-    embed.add_field(name="🌐 Servidor API", value="```diff\n+ OPERACIONAL\n```", inline=True)
-    embed.add_field(name="📜 Script Lua", value=f"```diff\n+ {script_st}\n```", inline=True)
-    embed.add_field(name="🗄️ Banco de Dados", value=f"```\n{len(db['keys'])} Chaves Ativas\n```", inline=False)
-    embed.set_footer(text=f"Check realizado às {get_sp_time().strftime('%H:%M:%S')}")
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="keylist", description="📋 Lista todas as chaves filtradas por uso")
-@app_commands.choices(filtro=[
-    app_commands.Choice(name="Não Usadas (Sem HWID)", value="disponivel"),
-    app_commands.Choice(name="Usadas (Com HWID)", value="usada"),
-    app_commands.Choice(name="Todas", value="todas")
-])
-async def keylist(interaction: discord.Interaction, filtro: app_commands.Choice[str]):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db()
-    keys = db["keys"]
+    if key not in db["keys"]:
+        return await interaction.response.send_message("❌ Esta Key não existe no sistema.", ephemeral=True)
     
-    texto = ""
-    contador = 0
+    if db["keys"][key].get("roblox_nick"):
+        return await interaction.response.send_message(f"⚠️ Esta Key já está vinculada ao nick: `{db['keys'][key]['roblox_nick']}`. Peça suporte para trocar.", ephemeral=True)
     
-    for k, v in keys.items():
-        hwid_vinculado = v.get("hwid")
-        
-        if filtro.value == "disponivel" and hwid_vinculado is None:
-            texto += f"🔹 `{k}` | Exp: `{v['expira']}`\n"
-            contador += 1
-        elif filtro.value == "usada" and hwid_vinculado is not None:
-            texto += f"🔸 `{k}` | PC: `{hwid_vinculado[:10]}...`\n"
-            contador += 1
-        elif filtro.value == "todas":
-            status_emoji = "🔸" if hwid_vinculado else "🔹"
-            texto += f"{status_emoji} `{k}` | Exp: `{v['expira']}`\n"
-            contador += 1
-
-    if not texto: texto = "Nenhuma chave encontrada neste filtro."
+    db["keys"][key]["roblox_nick"] = nick
+    save_db(db)
     
-    # Discord tem limite de 4096 caracteres, se tiver muita key, cortamos o texto.
-    if len(texto) > 3800: texto = texto[:3800] + "\n... (lista muito longa)"
-
-    embed = discord.Embed(title=f"📋 LISTAGEM: {filtro.name.upper()}", description=texto, color=COR_TECH)
-    embed.set_footer(text=f"Total: {contador} chaves encontradas.")
+    embed = discord.Embed(title="✅ CADASTRO REALIZADO", color=COR_SUCESSO)
+    embed.description = f"Sua key agora está vinculada ao jogador: **{nick}**\n\n*O script só funcionará nesta conta.*"
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# --- (Outros comandos administrativos: gerar, deletar, pausar, infokey, painelhwid permanecem iguais) ---
+@bot.tree.command(name="setstatus", description="🔧 Altera o status público do Script")
+@app_commands.choices(status=[
+    app_commands.Choice(name="🟢 ONLINE", value="🟢 ONLINE"),
+    app_commands.Choice(name="🟡 MANUTENÇÃO", value="🟡 MANUTENÇÃO"),
+    app_commands.Choice(name="🔴 PATCHED", value="🔴 PATCHED")
+])
+async def setstatus(interaction: discord.Interaction, status: app_commands.Choice[str]):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db()
+    db["script_status"] = status.value
+    save_db(db)
+    await interaction.response.send_message(f"✅ Status do Script atualizado para: **{status.value}**")
+
+@bot.tree.command(name="status", description="📡 Verifica a integridade do sistema")
+async def status(interaction: discord.Interaction):
+    db = load_db()
+    st = db.get("script_status", "🟢 ONLINE")
+    embed = discord.Embed(title="🛰️ STATUS DO SISTEMA", color=COR_TECH)
+    embed.add_field(name="📜 Script Lua", value=f"**{st}**", inline=True)
+    embed.add_field(name="🌐 API Auth", value="**🟢 OPERACIONAL**", inline=True)
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="gerar", description="⚙️ Gera novas licenças")
-@app_commands.choices(duracao=[app_commands.Choice(name="24h", value=1), app_commands.Choice(name="30d", value=30), app_commands.Choice(name="Vitalício", value=0)])
-async def gerar(interaction: discord.Interaction, duracao: app_commands.Choice[int], quantidade: int = 1):
+async def gerar(interaction: discord.Interaction, dias: int, quantidade: int = 1):
     if not interaction.user.guild_permissions.administrator: return
     db = load_db(); novas = []
-    venc = "LIFETIME" if duracao.value == 0 else (get_sp_time() + datetime.timedelta(days=duracao.value)).strftime("%d/%m/%Y")
+    venc = (get_sp_time() + datetime.timedelta(days=dias)).strftime("%d/%m/%Y")
     for _ in range(quantidade):
         nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-        db["keys"][nk] = {"hwid": None, "expira": venc, "ativa": True}
-        novas.append(nk); save_db(db)
-    await interaction.response.send_message(f"✅ **Lote Gerado:**\n```\n" + "\n".join(novas) + "\n```")
+        db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": venc, "ativa": True}
+        novas.append(nk)
+    save_db(db)
+    await interaction.response.send_message(f"✅ **Keys Geradas:**\n```\n" + "\n".join(novas) + "\n```")
 
 @bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de HWID")
 async def painelhwid(interaction: discord.Interaction):
     embed = discord.Embed(title="📟 CENTRAL DE LICENCIAMENTO", description="### 🛠️ Protocolo de Gerenciamento\nReset seu HWID abaixo.\n\n🛡️ *King Security 2026*", color=COR_TECH)
-    embed.set_footer(text="King Store © 2026")
     await interaction.channel.send(embed=embed, view=ResetView())
-    await interaction.response.send_message("✅ Painel Online!", ephemeral=True)
+    await interaction.response.send_message("✅ Painel Enviado!", ephemeral=True)
 
-# --- 🕸️ API DE CONEXÃO ---
+# --- 🕸️ API DE CONEXÃO (ROBLOX) ---
 app = Flask(__name__)
+
 @app.route('/auth')
 def auth():
-    key, hwid = request.args.get('key'), request.args.get('hwid')
+    key = request.args.get('key')
+    hwid = request.args.get('hwid')
+    nick = request.args.get('nick') # O script lua deve enviar o nick aqui
+    
     db = load_db()
     if key not in db["keys"]: return "Invalida", 404
+    
     info = db["keys"][key]
-    if not info.get("ativa", True): return "Pausada", 403
+    
+    # Validação de Nick (Obrigatório)
+    if not info.get("roblox_nick"): return "FaltaCadastro", 403
+    if info["roblox_nick"] != nick: return "NickIncorreto", 403
+    
+    # Validação de HWID
     if info["hwid"] is None:
         db["keys"][key]["hwid"] = hwid
         save_db(db)
         return "Vinculado", 200
+    
     return "Sucesso" if info["hwid"] == hwid else "HWID_Incorreto"
 
 def run(): app.run(host='0.0.0.0', port=10000)
