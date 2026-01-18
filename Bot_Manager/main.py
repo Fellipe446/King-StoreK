@@ -9,11 +9,12 @@ import string
 import datetime
 import pytz
 
-# --- 🛰️ CONFIGURAÇÕES ---
+# --- 🛰️ CONFIGURAÇÕES NÚCLEO ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
 COR_SUCESSO = 0x00FF7F       
 COR_TECH = 0x00FFFF          
+COR_ERRO = 0xFF2D2D
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -27,7 +28,7 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-# --- 🔐 SISTEMA DE RESET ---
+# --- 🔐 SISTEMA DE RESET (MODAL) ---
 class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
     key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=5)
 
@@ -64,7 +65,7 @@ class KingBot(discord.Client):
 
 bot = KingBot()
 
-# --- 👑 COMANDOS PADRONIZADOS ---
+# --- 👑 COMANDOS GESTÃO (ADMIN) ---
 
 @bot.tree.command(name="gerarkey", description="⚙️ Gera novas licenças personalizadas")
 @app_commands.choices(unidade=[
@@ -77,68 +78,79 @@ bot = KingBot()
 ])
 async def gerarkey(interaction: discord.Interaction, quantidade: int, tempo: int, unidade: app_commands.Choice[str]):
     if not interaction.user.guild_permissions.administrator: return
-    db = load_db()
-    novas = []
-    agora = get_sp_time()
+    db = load_db(); novas = []; agora = get_sp_time()
 
-    # Cálculo do Tempo
     if unidade.value == "minutos": exp = agora + datetime.timedelta(minutes=tempo)
     elif unidade.value == "horas": exp = agora + datetime.timedelta(hours=tempo)
     elif unidade.value == "dias": exp = agora + datetime.timedelta(days=tempo)
     elif unidade.value == "semanas": exp = agora + datetime.timedelta(weeks=tempo)
     elif unidade.value == "meses": exp = agora + datetime.timedelta(days=tempo*30)
-    else: exp = None # Vitalício
+    else: exp = None 
 
     data_formatada = exp.strftime("%d/%m/%Y %H:%M") if exp else "VITALÍCIO"
-    
     for _ in range(quantidade):
         nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": data_formatada, "ativa": True}
         novas.append(nk)
-    
     save_db(db)
     
     lista_keys = "\n".join([f"• Código: **{k}**" for k in novas])
-    
     embed = discord.Embed(title="🔑 LICENÇA GERADA COM SUCESSO", color=COR_SUCESSO)
-    embed.description = (
-        f"• Quantidade: **{quantidade} Key{'s' if quantidade > 1 else ''}**\n"
-        f"{lista_keys}\n"
-        f"• Status: 🟢 Ativa\n"
-        f"• Duração: **{tempo} {unidade.name}**\n"
-        f"• Expiração: `{data_formatada}`"
-    )
-    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
+    embed.description = f"• Quantidade: **{quantidade} Key**\n{lista_keys}\n• Status: 🟢 Ativa\n• Duração: **{tempo} {unidade.name}**"
+    embed.set_footer(text=f"Expira em: {data_formatada}")
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="deletarkey", description="🗑️ Remove uma licença do banco de dados")
+async def deletarkey(interaction: discord.Interaction, key: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); key = key.upper().strip()
+    if key in db["keys"]:
+        del db["keys"][key]; save_db(db)
+        await interaction.response.send_message(f"✅ Key `{key}` deletada.", ephemeral=True)
+    else: await interaction.response.send_message("❌ Key não encontrada.", ephemeral=True)
+
+@bot.tree.command(name="infokey", description="🔍 Consulta detalhes de uma licença")
+async def infokey(interaction: discord.Interaction, key: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); key = key.upper().strip()
+    if key not in db["keys"]: return await interaction.response.send_message("❌ Key inexistente.", ephemeral=True)
+    data = db["keys"][key]
+    embed = discord.Embed(title="🔍 AUDITORIA DE KEY", color=COR_TECH)
+    embed.description = f"• Key: **{key}**\n• Nick: `{data['roblox_nick'] or 'Livre'}`\n• HWID: `{data['hwid'] or 'Vazio'}`\n• Expiração: `{data['expira']}`"
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="setstatus", description="🔧 Altera o status do Script")
+async def setstatus(interaction: discord.Interaction, status: str):
+    if not interaction.user.guild_permissions.administrator: return
+    db = load_db(); db["script_status"] = status; save_db(db)
+    await interaction.response.send_message(f"✅ Status atualizado: `{status}`", ephemeral=True)
+
+# --- 👤 COMANDOS PÚBLICOS ---
 
 @bot.tree.command(name="cadastro", description="👤 Vincula Nick à Key")
 async def cadastro(interaction: discord.Interaction, key: str, nick: str):
-    db = load_db()
-    key = key.upper().strip()
-    if key not in db["keys"]:
-        return await interaction.response.send_message("❌ **ERRO:** Key inexistente.", ephemeral=True)
-    db["keys"][key]["roblox_nick"] = nick
-    save_db(db)
+    db = load_db(); key = key.upper().strip()
+    if key not in db["keys"]: return await interaction.response.send_message("❌ Key inválida.", ephemeral=True)
+    if db["keys"][key].get("roblox_nick"): return await interaction.response.send_message("⚠️ Já vinculada.", ephemeral=True)
+    db["keys"][key]["roblox_nick"] = nick; save_db(db)
     embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
     embed.description = f"• Nick: **{nick}**\n• Status: 🟢 Cadastrado com Sucesso"
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de HWID")
+@bot.tree.command(name="status", description="📡 Verifica o sistema")
+async def status(interaction: discord.Interaction):
+    db = load_db(); st = db.get("script_status", "🟢 ONLINE")
+    embed = discord.Embed(title="📡 DIAGNÓSTICO", color=COR_TECH)
+    embed.description = f"• Script: `{st}`\n• API: `🟢 OPERACIONAL`"
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de Reset")
 async def painelhwid(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="📟 CENTRAL DE LICENCIAMENTO | KING STORE", 
-        description=(
-            "**Protocolo de Gerenciamento**\n\n"
-            "Se você trocou de hardware ou formatou seu PC, utilize o terminal abaixo para resetar seu vínculo.\n\n"
-            "**ATENÇÃO:**\n"
-            "Ao clicar no botão, sua chave antiga será deletada e uma nova será enviada no seu **Privado (DM)**."
-        ), 
-        color=COR_TECH
-    )
+    embed = discord.Embed(title="📟 CENTRAL KING STORE", color=COR_TECH, description="**Protocolo de Gerenciamento**\nUse o botão para resetar seu HWID.")
     await interaction.channel.send(embed=embed, view=ResetView())
     await interaction.response.send_message("✅ Painel enviado.", ephemeral=True)
 
-# --- 🕸️ API ---
+# --- 🕸️ API AUTH ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
@@ -148,8 +160,7 @@ def auth():
     info = db["keys"][key]
     if info["roblox_nick"] != nick: return "NickIncorreto", 403
     if info["hwid"] is None:
-        db["keys"][key]["hwid"] = hwid
-        save_db(db); return "Vinculado", 200
+        db["keys"][key]["hwid"] = hwid; save_db(db); return "Vinculado", 200
     return "Sucesso" if info["hwid"] == hwid else "HWID_Incorreto"
 
 def run(): app.run(host='0.0.0.0', port=10000)
