@@ -9,12 +9,11 @@ import string
 import datetime
 import pytz
 
-# --- 🛰️ CONFIGURAÇÕES DE NÚCLEO (2026) ---
+# --- 🛰️ CONFIGURAÇÕES ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
-COR_TECH = 0x00FFFF          # Ciano Cyber
-COR_ERRO = 0xFF2D2D          # Vermelho Neon
-COR_SUCESSO = 0x00FF7F       # Verde Esmeralda
+COR_SUCESSO = 0x00FF7F       
+COR_TECH = 0x00FFFF          
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -22,34 +21,32 @@ def get_sp_time():
 def load_db():
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, 'w') as f: 
-            json.dump({"keys": {}, "script_status": "🟢 ONLINE", "blacklist": []}, f)
+            json.dump({"keys": {}, "script_status": "🟢 ONLINE"}, f)
     with open(DB_FILE, 'r') as f: return json.load(f)
 
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-# --- 🔐 INTERFACE: TERMINAL DE RESET HWID ---
-class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE PURIFICAÇÃO"):
-    key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=8)
+# --- 🔐 SISTEMA DE RESET ---
+class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
+    key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=5)
 
     async def on_submit(self, interaction: discord.Interaction):
         db = load_db()
         key = self.key_input.value.upper().strip()
         if key not in db["keys"]:
-            return await interaction.response.send_message("❌ **ERRO:** Chave não localizada.", ephemeral=True)
+            return await interaction.response.send_message("❌ **ERRO:** Key inválida.", ephemeral=True)
         
         info = db["keys"][key]
-        nova_k = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+        nova_k = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         db["keys"][nova_k] = {"hwid": None, "roblox_nick": info.get("roblox_nick"), "expira": info["expira"], "ativa": True}
         del db["keys"][key]
         save_db(db)
 
-        embed = discord.Embed(title="♻️ RESET DE HARDWARE CONCLUÍDO", color=COR_SUCESSO)
-        embed.description = "### ✅ Vínculo Purificado\n> Sua nova chave foi enviada para o seu **Privado (DM)**."
-        embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
-        
+        embed = discord.Embed(title="♻️ RESET CONCLUÍDO", color=COR_SUCESSO, description="Sua nova chave foi enviada no seu **Privado (DM)**.")
+        embed.set_footer(text="King Store © 2026")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        try: await interaction.user.send(f"💎 **KING STORE - SEGURANÇA**\nNova Key: `{nova_k}`")
+        try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`")
         except: pass
 
 class ResetView(ui.View):
@@ -68,80 +65,69 @@ class KingBot(discord.Client):
 
 bot = KingBot()
 
-# --- 👑 COMANDOS DE GESTÃO ---
+# --- 👑 COMANDOS PADRONIZADOS ---
 
-@bot.tree.command(name="gerar", description="⚙️ Gera novas licenças de acesso")
+@bot.tree.command(name="gerar", description="⚙️ Gera novas licenças")
 async def gerar(interaction: discord.Interaction, dias: int, quantidade: int = 1):
     if not interaction.user.guild_permissions.administrator: return
-    db = load_db(); novas = []
+    db = load_db()
+    novas = []
     venc = (get_sp_time() + datetime.timedelta(days=dias)).strftime("%d/%m/%Y")
+    
     for _ in range(quantidade):
-        nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+        nk = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         db["keys"][nk] = {"hwid": None, "roblox_nick": None, "expira": venc, "ativa": True}
         novas.append(nk)
     save_db(db)
     
-    lista_keys = "\n".join([f"• Código: `{k}`" for k in novas])
+    # Visual exatamente como você pediu:
+    lista_keys = "\n".join([f"• Código: **{k}**" for k in novas])
+    
     embed = discord.Embed(title="🔑 LICENÇA GERADA COM SUCESSO", color=COR_SUCESSO)
     embed.description = (
-        f"• **Quantidade:** {quantidade} Key{'s' if quantidade > 1 else ''}\n"
+        f"• Quantidade: **{quantidade} Key**\n"
         f"{lista_keys}\n"
-        f"• **Status:** 🟢 Ativa\n"
-        f"• **Validade:** `{venc}`"
+        f"• Status: 🟢 Ativa"
     )
-    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
+    embed.set_footer(text=f"Validade: {venc} - King Store © 2026")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="cadastro", description="👤 Vincula seu Nick do Roblox à sua Key")
+@bot.tree.command(name="cadastro", description="👤 Vincula Nick à Key")
 async def cadastro(interaction: discord.Interaction, key: str, nick: str):
     db = load_db()
     key = key.upper().strip()
     if key not in db["keys"]:
-        return await interaction.response.send_message("❌ **ERRO:** Licença inexistente.", ephemeral=True)
-    if db["keys"][key].get("roblox_nick"):
-        return await interaction.response.send_message(f"⚠️ **ALERTA:** Key já vinculada ao nick `{db['keys'][key]['roblox_nick']}`", ephemeral=True)
+        return await interaction.response.send_message("❌ **ERRO:** Key inexistente.", ephemeral=True)
     
     db["keys"][key]["roblox_nick"] = nick
     save_db(db)
-    embed = discord.Embed(title="👤 VÍNCULO DE IDENTIDADE | KING STORE", color=COR_SUCESSO)
-    embed.description = f"### ✅ Cadastro Finalizado\n• **Nick:** `{nick}`\n• **Status:** `AUTORIZADO`"
-    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
+    
+    embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
+    embed.description = (
+        f"• Nick: **{nick}**\n"
+        f"• Status: 🟢 Cadastrado com Sucesso"
+    )
+    embed.set_footer(text="King Store © 2026")
     await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="status", description="📡 Verifica a integridade do sistema")
-async def status(interaction: discord.Interaction):
-    db = load_db()
-    st = db.get("script_status", "🟢 ONLINE")
-    embed = discord.Embed(title="📡 DIAGNÓSTICO DE REDE | KING STORE", color=COR_TECH)
-    embed.description = f"### 🛡️ Status do Ecossistema\n• **Script Lua:** `{st}`\n• **API Auth:** `🟢 OPERACIONAL`"
-    embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="setstatus", description="🔧 Altera o status público do Script")
-async def setstatus(interaction: discord.Interaction, status: str):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db()
-    db["script_status"] = status
-    save_db(db)
-    await interaction.response.send_message(f"✅ **SISTEMA:** Status atualizado para: `{status}`", ephemeral=True)
 
 @bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de HWID")
 async def painelhwid(interaction: discord.Interaction):
     embed = discord.Embed(
         title="📟 CENTRAL DE LICENCIAMENTO | KING STORE", 
         description=(
-            "### 🛠️ Protocolo de Gerenciamento\n"
-            "Se você trocou de hardware ou formatou seu PC, utilize o terminal abaixo para resetar seu vínculo. "
-            "**ATENÇÃO:** Ao clicar no botão, sua chave antiga será deletada e uma nova será enviada no seu Privado (DM).\n\n"
+            "**Protocolo de Gerenciamento**\n\n"
+            "Se você trocou de hardware ou formatou seu PC, utilize o terminal abaixo para resetar seu vínculo.\n\n"
+            "**ATENÇÃO:**\n"
+            "Ao clicar no botão, sua chave antiga será deletada e uma nova será enviada no seu **Privado (DM)**.\n\n"
             "🛡️ *Proteção de dados ativada via King Security.*"
         ), 
         color=COR_TECH
     )
     embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     await interaction.channel.send(embed=embed, view=ResetView())
-    await interaction.response.send_message("✅ Painel Implantado.", ephemeral=True)
+    await interaction.response.send_message("✅ Painel enviado.", ephemeral=True)
 
-# --- 🕸️ API DE CONEXÃO ---
+# --- 🕸️ API ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
@@ -149,7 +135,6 @@ def auth():
     db = load_db()
     if key not in db["keys"]: return "Invalida", 404
     info = db["keys"][key]
-    if not info.get("roblox_nick"): return "FaltaCadastro", 403
     if info["roblox_nick"] != nick: return "NickIncorreto", 403
     if info["hwid"] is None:
         db["keys"][key]["hwid"] = hwid
