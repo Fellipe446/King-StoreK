@@ -163,9 +163,6 @@ async def painelhwid(interaction: discord.Interaction):
         color=COR_TECH
     )
     
-    # IMPORTANTE: Mande sua foto no Discord e cole o link dela abaixo:
-    embed.set_image(url="https://i.imgur.com/uW6P8Wb.png") 
-    
     embed.set_footer(text="King Store © 2026 - Protocolo Criptografado")
     
     await interaction.channel.send(embed=embed, view=ResetView())
