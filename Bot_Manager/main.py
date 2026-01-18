@@ -28,6 +28,36 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
+# --- 👤 INTERFACE DE CONFIRMAÇÃO DE CADASTRO ---
+class ConfirmarCadastro(ui.View):
+    def __init__(self, key, nick):
+        super().__init__(timeout=60)
+        self.key = key
+        self.nick = nick
+
+    @ui.button(label="CONFIRMAR", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: ui.Button):
+        db = load_db()
+        # Verificação dupla caso a key tenha sido usada enquanto o botão estava aberto
+        if self.key not in db["keys"]:
+            return await interaction.response.edit_message(content="❌ Erro: Key não encontrada.", view=None)
+        
+        db["keys"][self.key]["roblox_nick"] = self.nick
+        save_db(db)
+
+        embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
+        embed.description = (
+            f"• Nick Vinculado: **{self.nick}**\n"
+            f"• Status: 🟢 Ativado com Sucesso\n\n"
+            f"🛡️ *Sua licença agora está protegida e vinculada a este apelido.*"
+        )
+        embed.set_footer(text="King Store © 2026")
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    @ui.button(label="CANCELAR", style=discord.ButtonStyle.danger, emoji="✖️")
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.edit_message(content="❌ Operação cancelada pelo usuário.", embed=None, view=None)
+
 # --- 🔐 SISTEMA DE RESET ---
 class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
     key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=5)
@@ -65,9 +95,9 @@ class KingBot(discord.Client):
 
 bot = KingBot()
 
-# --- 👑 COMANDOS DE ADMINISTRAÇÃO ---
+# --- 👑 COMANDOS ---
 
-@bot.tree.command(name="gerarkey", description="⚙️ Gera novas licenças personalizadas")
+@bot.tree.command(name="gerarkey", description="⚙️ Gera novas licenças")
 @app_commands.choices(duracao=[
     app_commands.Choice(name="Minutos", value="minutos"),
     app_commands.Choice(name="Horas", value="horas"),
@@ -100,6 +130,29 @@ async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choic
     embed.set_footer(text=f"Duração: {tempo} {duracao.name} | Expira: {data_f}")
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="cadastro", description="👤 Vincula seu apelido (Nick) à Key")
+async def cadastro(interaction: discord.Interaction, key: str, nick: str):
+    db = load_db()
+    key = key.upper().strip()
+    
+    if key not in db["keys"]:
+        return await interaction.response.send_message("❌ **ERRO:** Esta Key não existe no sistema.", ephemeral=True)
+    
+    if db["keys"][key].get("roblox_nick"):
+        return await interaction.response.send_message(f"⚠️ **ALERTA:** Esta Key já está vinculada ao nick `{db['keys'][key]['roblox_nick']}`.", ephemeral=True)
+
+    # Painel de Confirmação
+    embed = discord.Embed(title="🛡️ CONFIRMAÇÃO DE IDENTIDADE", color=COR_TECH)
+    embed.description = (
+        f"Você está prestes a vincular sua licença ao apelido abaixo:\n\n"
+        f"• Apelido: **{nick}**\n\n"
+        f"**Tem certeza que este é o apelido correto da sua conta?**\n"
+        f"*Não será possível alterar sem o suporte.*"
+    )
+    
+    view = ConfirmarCadastro(key, nick)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 @bot.tree.command(name="infokey", description="🔍 Consulta detalhes de uma licença")
 async def infokey(interaction: discord.Interaction, key: str):
     if not interaction.user.guild_permissions.administrator: return
@@ -108,40 +161,6 @@ async def infokey(interaction: discord.Interaction, key: str):
     d = db["keys"][key]
     embed = discord.Embed(title="🔍 DETALHES", color=COR_TECH)
     embed.description = f"• Key: `{key}`\n• Nick: `{d['roblox_nick'] or 'Livre'}`\n• HWID: `{d['hwid'] or 'Vazio'}`\n• Expira: `{d['expira']}`"
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="listarkeys", description="📋 Lista todas as chaves")
-async def listarkeys(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db()
-    txt = "\n".join([f"• `{k}` | `{v['roblox_nick'] or 'Livre'}`" for k, v in db["keys"].items()])
-    await interaction.response.send_message(embed=discord.Embed(title="📋 RELATÓRIO", description=txt or "Vazio", color=COR_TECH), ephemeral=True)
-
-@bot.tree.command(name="deletarkey", description="🗑️ Remove uma licença")
-async def deletarkey(interaction: discord.Interaction, key: str):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db(); key = key.upper().strip()
-    if key in db["keys"]:
-        del db["keys"][key]; save_db(db)
-        await interaction.response.send_message(f"✅ Removida: `{key}`", ephemeral=True)
-    else: await interaction.response.send_message("❌ Não encontrada.", ephemeral=True)
-
-@bot.tree.command(name="setstatus", description="🔧 Altera o status do Script")
-async def setstatus(interaction: discord.Interaction, status: str):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db(); db["script_status"] = status; save_db(db)
-    await interaction.response.send_message(f"✅ Status: `{status}`", ephemeral=True)
-
-# --- 👤 COMANDOS PÚBLICOS ---
-
-@bot.tree.command(name="cadastro", description="👤 Vincula Nick à Key")
-async def cadastro(interaction: discord.Interaction, key: str, nick: str):
-    db = load_db(); key = key.upper().strip()
-    if key not in db["keys"]: return await interaction.response.send_message("❌ Key inexistente.", ephemeral=True)
-    if db["keys"][key].get("roblox_nick"): return await interaction.response.send_message("⚠️ Já vinculada.", ephemeral=True)
-    db["keys"][key]["roblox_nick"] = nick; save_db(db)
-    embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
-    embed.description = f"• Nick: **{nick}**\n• Status: 🟢 Cadastrado com Sucesso"
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="status", description="📡 Verifica o sistema")
