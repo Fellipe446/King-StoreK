@@ -14,7 +14,6 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 DB_FILE = 'database.json'
 COR_SUCESSO = 0x00FF7F       
 COR_TECH = 0x00FFFF          
-COR_ERRO = 0xFF2D2D
 
 def get_sp_time():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
@@ -28,61 +27,37 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-# --- 👤 INTERFACE DE CONFIRMAÇÃO DE CADASTRO ---
+# --- 👤 INTERFACE DE CONFIRMAÇÃO ---
 class ConfirmarCadastro(ui.View):
-    def __init__(self, key, nick):
+    def __init__(self, key, username, display_name):
         super().__init__(timeout=60)
         self.key = key
-        self.nick = nick
+        self.username = username
+        self.display_name = display_name
 
     @ui.button(label="CONFIRMAR", style=discord.ButtonStyle.success, emoji="✅")
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
         db = load_db()
-        # Verificação dupla caso a key tenha sido usada enquanto o botão estava aberto
         if self.key not in db["keys"]:
             return await interaction.response.edit_message(content="❌ Erro: Key não encontrada.", view=None)
         
-        db["keys"][self.key]["roblox_nick"] = self.nick
+        # Salvamos o Username (nome de criação) que é o único e imutável para o script
+        db["keys"][self.key]["roblox_nick"] = self.username
         save_db(db)
 
         embed = discord.Embed(title="👤 CADASTRO REALIZADO", color=COR_SUCESSO)
         embed.description = (
-            f"• Nick Vinculado: **{self.nick}**\n"
-            f"• Status: 🟢 Ativado com Sucesso\n\n"
-            f"🛡️ *Sua licença agora está protegida e vinculada a este apelido.*"
+            f"• Nome de Criação: **@{self.username}**\n"
+            f"• Nome de Exibição: **{self.display_name}**\n"
+            f"• Status: 🟢 Vinculado com Sucesso\n\n"
+            f"🛡️ *Sua licença agora está travada neste usuário.*"
         )
         embed.set_footer(text="King Store © 2026")
         await interaction.response.edit_message(embed=embed, view=None)
 
     @ui.button(label="CANCELAR", style=discord.ButtonStyle.danger, emoji="✖️")
     async def cancel(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.edit_message(content="❌ Operação cancelada pelo usuário.", embed=None, view=None)
-
-# --- 🔐 SISTEMA DE RESET ---
-class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
-    key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=5)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        db = load_db()
-        key = self.key_input.value.upper().strip()
-        if key not in db["keys"]:
-            return await interaction.response.send_message("❌ **ERRO:** Key inválida.", ephemeral=True)
-        
-        info = db["keys"][key]
-        nova_k = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-        db["keys"][nova_k] = {"hwid": None, "roblox_nick": info.get("roblox_nick"), "expira": info["expira"], "ativa": True}
-        del db["keys"][key]
-        save_db(db)
-
-        embed = discord.Embed(title="♻️ RESET CONCLUÍDO", color=COR_SUCESSO, description="Sua nova chave foi enviada no seu **Privado (DM)**.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`")
-        except: pass
-
-class ResetView(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @ui.button(label="RESETAR HWID", style=discord.ButtonStyle.danger, custom_id="rst_btn", emoji="⚙️")
-    async def reset(self, interaction, button): await interaction.response.send_modal(ResetModal())
+        await interaction.response.edit_message(content="❌ Operação cancelada.", embed=None, view=None)
 
 # --- 🤖 NÚCLEO DO BOT ---
 class KingBot(discord.Client):
@@ -130,51 +105,56 @@ async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choic
     embed.set_footer(text=f"Duração: {tempo} {duracao.name} | Expira: {data_f}")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="cadastro", description="👤 Vincula seu apelido (Nick) à Key")
-async def cadastro(interaction: discord.Interaction, key: str, nick: str):
+@bot.tree.command(name="cadastro", description="👤 Vincula sua conta Roblox à Key")
+async def cadastro(interaction: discord.Interaction, key: str, nome_criacao: str, nome_exibicao: str):
     db = load_db()
     key = key.upper().strip()
     
     if key not in db["keys"]:
-        return await interaction.response.send_message("❌ **ERRO:** Esta Key não existe no sistema.", ephemeral=True)
+        return await interaction.response.send_message("❌ **ERRO:** Key inexistente.", ephemeral=True)
     
     if db["keys"][key].get("roblox_nick"):
-        return await interaction.response.send_message(f"⚠️ **ALERTA:** Esta Key já está vinculada ao nick `{db['keys'][key]['roblox_nick']}`.", ephemeral=True)
+        return await interaction.response.send_message(f"⚠️ **ALERTA:** Key já vinculada ao usuário `@{db['keys'][key]['roblox_nick']}`.", ephemeral=True)
 
-    # Painel de Confirmação
-    embed = discord.Embed(title="🛡️ CONFIRMAÇÃO DE IDENTIDADE", color=COR_TECH)
+    # Painel de Confirmação Detalhado
+    embed = discord.Embed(title="🛡️ VERIFICAÇÃO DE IDENTIDADE", color=COR_TECH)
     embed.description = (
-        f"Você está prestes a vincular sua licença ao apelido abaixo:\n\n"
-        f"• Apelido: **{nick}**\n\n"
-        f"**Tem certeza que este é o apelido correto da sua conta?**\n"
-        f"*Não será possível alterar sem o suporte.*"
+        "**Confirme se os dados abaixo estão corretos:**\n\n"
+        f"• Nome de Criação: **@{nome_criacao}**\n"
+        f"• Nome de Exibição: **{nome_exibicao}**\n\n"
+        "⚠️ *O script validará o Nome de Criação. Se estiver errado, o acesso será negado.*"
     )
     
-    view = ConfirmarCadastro(key, nick)
+    view = ConfirmarCadastro(key, nome_criacao, nome_exibicao)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-@bot.tree.command(name="infokey", description="🔍 Consulta detalhes de uma licença")
-async def infokey(interaction: discord.Interaction, key: str):
-    if not interaction.user.guild_permissions.administrator: return
-    db = load_db(); key = key.upper().strip()
-    if key not in db["keys"]: return await interaction.response.send_message("❌ Inexistente.", ephemeral=True)
-    d = db["keys"][key]
-    embed = discord.Embed(title="🔍 DETALHES", color=COR_TECH)
-    embed.description = f"• Key: `{key}`\n• Nick: `{d['roblox_nick'] or 'Livre'}`\n• HWID: `{d['hwid'] or 'Vazio'}`\n• Expira: `{d['expira']}`"
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+# --- 🔐 RESET HWID ---
+class ResetModal(ui.Modal, title="🛠️ PROTOCOLO DE RESET"):
+    key_input = ui.TextInput(label="SISTEMA DE LICENÇA", placeholder="INSIRA SUA KEY...", min_length=5)
 
-@bot.tree.command(name="status", description="📡 Verifica o sistema")
-async def status(interaction: discord.Interaction):
-    db = load_db(); st = db.get("script_status", "🟢 ONLINE")
-    await interaction.response.send_message(embed=discord.Embed(title="📡 DIAGNÓSTICO", description=f"• Script: `{st}`\n• API: `🟢 OPERACIONAL`", color=COR_TECH))
+    async def on_submit(self, interaction: discord.Interaction):
+        db = load_db()
+        key = self.key_input.value.upper().strip()
+        if key not in db["keys"]:
+            return await interaction.response.send_message("❌ **ERRO:** Key inválida.", ephemeral=True)
+        
+        info = db["keys"][key]
+        nova_k = 'KING-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+        db["keys"][nova_k] = {"hwid": None, "roblox_nick": info.get("roblox_nick"), "expira": info["expira"], "ativa": True}
+        del db["keys"][key]
+        save_db(db)
 
-@bot.tree.command(name="painelhwid", description="📟 Envia o Terminal de Reset")
-async def painelhwid(interaction: discord.Interaction):
-    embed = discord.Embed(title="📟 CENTRAL KING STORE", color=COR_TECH, description="**Protocolo de Gerenciamento**\nReset seu HWID abaixo.\n\n🛡️ *King Security*")
-    await interaction.channel.send(embed=embed, view=ResetView())
-    await interaction.response.send_message("✅ Painel enviado.", ephemeral=True)
+        embed = discord.Embed(title="♻️ RESET CONCLUÍDO", color=COR_SUCESSO, description="Sua nova chave foi enviada na DM.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try: await interaction.user.send(f"💎 **KING STORE**\nNova Key: `{nova_k}`")
+        except: pass
 
-# --- 🕸️ API ---
+class ResetView(ui.View):
+    def __init__(self): super().__init__(timeout=None)
+    @ui.button(label="RESETAR HWID", style=discord.ButtonStyle.danger, custom_id="rst_btn", emoji="⚙️")
+    async def reset(self, interaction, button): await interaction.response.send_modal(ResetModal())
+
+# --- 🕸️ API & BOT RUN ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
