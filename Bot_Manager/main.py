@@ -8,6 +8,7 @@ import random
 import string
 import datetime
 import pytz
+import requests # Necessário para consultar o Roblox
 
 # --- 🛰️ CONFIGURAÇÕES ---
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -27,6 +28,22 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
+# --- 🔍 FUNÇÃO PARA BUSCAR DISPLAY NAME NO ROBLOX ---
+def get_roblox_display_name(username):
+    try:
+        url = "https://users.roblox.com/v1/usernames/users"
+        payload = {"usernames": [username], "excludeBannedUsers": False}
+        response = requests.post(url, json=payload)
+        data = response.json()
+        if data["data"]:
+            user_id = data["data"][0]["id"]
+            # Segunda consulta para pegar o display name real e atualizado
+            info = requests.get(f"https://users.roblox.com/v1/users/{user_id}").json()
+            return info.get("displayName"), info.get("name")
+        return None, None
+    except:
+        return None, None
+
 # --- 👤 INTERFACE DE CONFIRMAÇÃO ---
 class ConfirmarCadastro(ui.View):
     def __init__(self, key, username, display_name):
@@ -41,7 +58,6 @@ class ConfirmarCadastro(ui.View):
         if self.key not in db["keys"]:
             return await interaction.response.edit_message(content="❌ Erro: Key não encontrada.", view=None)
         
-        # Salvamos o Username (nome de criação) que é o único e imutável para o script
         db["keys"][self.key]["roblox_nick"] = self.username
         save_db(db)
 
@@ -49,8 +65,7 @@ class ConfirmarCadastro(ui.View):
         embed.description = (
             f"• Nome de Criação: **@{self.username}**\n"
             f"• Nome de Exibição: **{self.display_name}**\n"
-            f"• Status: 🟢 Vinculado com Sucesso\n\n"
-            f"🛡️ *Sua licença agora está travada neste usuário.*"
+            f"• Status: 🟢 Vinculado com Sucesso"
         )
         embed.set_footer(text="King Store © 2026")
         await interaction.response.edit_message(embed=embed, view=None)
@@ -106,7 +121,7 @@ async def gerarkey(interaction: discord.Interaction, duracao: app_commands.Choic
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="cadastro", description="👤 Vincula sua conta Roblox à Key")
-async def cadastro(interaction: discord.Interaction, key: str, nome_criacao: str, nome_exibicao: str):
+async def cadastro(interaction: discord.Interaction, key: str, nome_criacao: str):
     db = load_db()
     key = key.upper().strip()
     
@@ -114,18 +129,24 @@ async def cadastro(interaction: discord.Interaction, key: str, nome_criacao: str
         return await interaction.response.send_message("❌ **ERRO:** Key inexistente.", ephemeral=True)
     
     if db["keys"][key].get("roblox_nick"):
-        return await interaction.response.send_message(f"⚠️ **ALERTA:** Key já vinculada ao usuário `@{db['keys'][key]['roblox_nick']}`.", ephemeral=True)
+        return await interaction.response.send_message(f"⚠️ **ALERTA:** Key já vinculada a `@{db['keys'][key]['roblox_nick']}`.", ephemeral=True)
 
-    # Painel de Confirmação Detalhado
+    # Busca automática no Roblox
+    display_name, real_username = get_roblox_display_name(nome_criacao)
+    
+    if not display_name:
+        return await interaction.response.send_message(f"❌ **ERRO:** Usuário `@{nome_criacao}` não encontrado no Roblox.", ephemeral=True)
+
+    # Painel de Confirmação Automatizado
     embed = discord.Embed(title="🛡️ VERIFICAÇÃO DE IDENTIDADE", color=COR_TECH)
     embed.description = (
-        "**Confirme se os dados abaixo estão corretos:**\n\n"
-        f"• Nome de Criação: **@{nome_criacao}**\n"
-        f"• Nome de Exibição: **{nome_exibicao}**\n\n"
-        "⚠️ *O script validará o Nome de Criação. Se estiver errado, o acesso será negado.*"
+        "**Localizamos sua conta no Roblox:**\n\n"
+        f"• Nome de Criação: **@{real_username}**\n"
+        f"• Nome de Exibição: **{display_name}**\n\n"
+        "**Esta é a conta correta que você deseja vincular?**"
     )
     
-    view = ConfirmarCadastro(key, nome_criacao, nome_exibicao)
+    view = ConfirmarCadastro(key, real_username, display_name)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # --- 🔐 RESET HWID ---
@@ -154,7 +175,7 @@ class ResetView(ui.View):
     @ui.button(label="RESETAR HWID", style=discord.ButtonStyle.danger, custom_id="rst_btn", emoji="⚙️")
     async def reset(self, interaction, button): await interaction.response.send_modal(ResetModal())
 
-# --- 🕸️ API & BOT RUN ---
+# --- 🕸️ API ---
 app = Flask(__name__)
 @app.route('/auth')
 def auth():
